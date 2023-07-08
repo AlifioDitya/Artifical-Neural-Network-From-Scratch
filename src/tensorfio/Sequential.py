@@ -1,5 +1,4 @@
 import numpy as np
-import tensorflow as tf # For optimized tensor operations only
 
 class Sequential:
     '''
@@ -133,7 +132,7 @@ class Sequential:
 
     def one_hot_encode(self, y):
         if len(y.shape) == 1:
-            y_one_hot = tf.one_hot(y, self.layers[-1].units)
+            y_one_hot = np.array([[1 if y[i] == j else 0 for j in range(self.layers[-1].units)] for i in range(len(y))])
             return y_one_hot
         else:
             y_one_hot = np.zeros((len(y), self.layers[-1].units))
@@ -142,11 +141,11 @@ class Sequential:
     
     def forward_propagation(self, X, y):
         '''
+        Algorithm to propagate the input forward through the network to compute the loss and metric.
+        
         Parameters:
         X: Input data
         y: Labels
-
-        Algorithm to propagate the input forward through the network to compute the loss and metric.
         '''
 
         X = np.array(X)
@@ -173,12 +172,12 @@ class Sequential:
         
     def backward_propagation(self, X, y, y_prob):
         '''
+        Algorithm to propagate the error backwards through the network, using the selected optimizer.
+        
         Parameters:
         X: Input data
         y: Labels
         y_prob: Output of the last layer
-
-        Algorithm to propagate the error backwards through the network, using the selected optimizer.
         '''
         
         y = np.array(y)
@@ -282,6 +281,18 @@ class Sequential:
         self.lr = lr
         X = np.array(X)
         y = np.array(y)
+
+        # Check if batch_size is valid
+        if batch_size <= 0 or batch_size > len(X):
+            raise ValueError(f'Invalid batch_size: {batch_size}')
+
+        # Check if epochs is valid
+        if epochs <= 0:
+            raise ValueError(f'Invalid epochs: {epochs}')
+        
+        # Check if patience is valid
+        if patience is not None and patience <= 0:
+            raise ValueError(f'Invalid patience: {patience}')
 
         # Set the seed for reproducibility
         if random_state is not None:

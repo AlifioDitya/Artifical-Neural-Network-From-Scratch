@@ -1,5 +1,5 @@
 import numpy as np
-import tensorflow as tf # For optimized tensor operations only
+from .Activation import sigmoid, relu, softmax, tanh
 
 class Layer:
     '''
@@ -53,23 +53,40 @@ class Dense(Layer):
     def __init__(self, units, activation=None, use_bias=True, input_shape=None, **kwargs):
         super().__init__(**kwargs)
         self.units = units
-        self.activation = activation
+
+        # If activation is not a string, check if it is a function
+        if type(activation) is not str:
+            if callable(activation):
+                self.activation = activation
+            else:
+                raise TypeError('activation must be a string or a function')
+
+        if activation.lower() == 'sigmoid':
+            self.activation = sigmoid
+        elif activation.lower() == 'relu':
+            self.activation = relu
+        elif activation.lower() == 'softmax':
+            self.activation = softmax
+        elif activation.lower() == 'tanh':
+            self.activation = tanh
+        else:
+            self.activation = None
+        
         self.use_bias = use_bias
         self.input_shape = input_shape
     
     def build(self, input_shape):
         # Initialize weights and biases
-        self.w = self.add_weight([input_shape[-1], self.units]) # Shape: (input_dim, output_dim)
+        self.w = self.add_weight([input_shape[-1], self.units])
         if self.use_bias:
-            self.b = self.add_weight([self.units]) # Shape: (output_dim,)
+            self.b = self.add_weight([self.units])
         
         super().build(input_shape)
     
     def call(self, inputs):
         # Forward propagate inputs through this layer
-        # y = x * w + b
         self.input = inputs
-        y = tf.matmul(inputs, self.w)
+        y = np.matmul(inputs, self.w)
         if self.use_bias:
             y = y + self.b
         self.z = y
