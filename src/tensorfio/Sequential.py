@@ -30,10 +30,15 @@ class Sequential:
         metrics: Metrics to use.
         lr: Learning rate.
     '''
-    def __init__(self, layers=np.array([]), name='Sequential'):
+    def __init__(self, layers=np.array([]), name='Sequential', beta1=0.9, beta2=0.999, epsilon=1e-8):
         self.built = False
         self.layers = layers
         self.name = name
+
+        # Adam optimizer parameters
+        self.beta1 = beta1
+        self.beta2 = beta2
+        self.epsilon = epsilon
 
         # If input shape is known, build the model
         if len(self.layers) > 0 and layers[0].input_shape is not None:
@@ -96,11 +101,11 @@ class Sequential:
             print()
 
             total_params += param_count
-        print('=====================================')
+        print('======================================')
         print(f'Total params: {total_params}')
 
     def compile(self, optimizer, loss, metric):
-        if optimizer not in ['sgd']:
+        if optimizer not in ['sgd', 'adam']:
             raise ValueError('Optimizer not supported')
         if loss not in ['mse', 'crossentropy', 'binary_crossentropy', 'categorical_crossentropy']:
             raise ValueError('Loss not supported')
@@ -187,9 +192,58 @@ class Sequential:
         
         if self.optimizer == 'sgd':
             # Compute gradient of loss with respect to weights and biases
-            self.gradient_descent(X, y_true, y_prob)
+            grad_w, grad_b = self.gradient_descent(X, y_true, y_prob)
+        elif self.optimizer == 'adam':
+            # Adam optimizer
+            grad_w, grad_b = self.adam(X, y_true, y_prob)
         else:
             raise ValueError('Optimizer not supported')
+        
+        # Update weights and biases
+        self.update_weights(grad_w, grad_b)
+        
+    def adam(self, X, y_true, y_prob):
+        '''
+        Adam optimizer
+        
+        Parameters:
+        X: Input data
+        y_true: One-hot encoded labels
+        y_prob: Output of the last layer
+        '''
+        
+        # Initialize the first and second moment estimates
+        self.m_w = [np.zeros(layer.w.shape) for layer in self.layers]
+        self.m_b = [np.zeros(layer.b.shape) for layer in self.layers]
+        self.v_w = [np.zeros(layer.w.shape) for layer in self.layers]
+        self.v_b = [np.zeros(layer.b.shape) for layer in self.layers]
+
+        # Compute gradient of loss with respect to weights and biases, using 
+        grad_w, grad_b = self.gradient_descent(X, y_true, y_prob)
+
+        # Update the iteration counter
+        self.t += 1
+
+        # Update the first and second moment estimates
+        for i, layer in enumerate(self.layers):
+            self.m_w[i] = self.beta1 * self.m_w[i] + (1 - self.beta1) * grad_w[i]
+            self.m_b[i] = self.beta1 * self.m_b[i] + (1 - self.beta1) * grad_b[i]
+            self.v_w[i] = self.beta2 * self.v_w[i] + (1 - self.beta2) * grad_w[i] ** 2
+            self.v_b[i] = self.beta2 * self.v_b[i] + (1 - self.beta2) * grad_b[i] ** 2
+
+        # Correct the bias of the first and second moment estimates
+        m_w_corrected = [self.m_w[i] / (1 - self.beta1 ** self.t) for i in range(len(self.m_w))]
+        m_b_corrected = [self.m_b[i] / (1 - self.beta1 ** self.t) for i in range(len(self.m_b))]
+
+        v_w_corrected = [self.v_w[i] / (1 - self.beta2 ** self.t) for i in range(len(self.v_w))]
+        v_b_corrected = [self.v_b[i] / (1 - self.beta2 ** self.t) for i in range(len(self.v_b))]
+
+        # Compute the update
+        grad_w = [self.lr * m_w_corrected[i] / (np.sqrt(v_w_corrected[i]) + self.epsilon) for i in range(len(m_w_corrected))]
+        grad_b = [self.lr * m_b_corrected[i] / (np.sqrt(v_b_corrected[i]) + self.epsilon) for i in range(len(m_b_corrected))]
+
+        return grad_w, grad_b
+
         
     def loss_gradient(self, y_true, y_prob):
         if self.loss == 'mse':
@@ -248,34 +302,35 @@ class Sequential:
         grad_b = []
 
         # Compute the gradient of the error w.r.t the weights of the output layer
-        del_c_wrt_a = self.loss_gradient(y_true, y_prob)
-        del_a_wrt_z = self.layers[-1].activation(self.layers[-1].z, derivative=True)
-        del_z_wrt_w = X if len(self.layers) == 1 else self.layers[-2].a
-        del_c_wrt_w = np.dot(del_z_wrt_w.T, del_c_wrt_a * del_a_wrt_z)
-        grad_w.append(del_c_wrt_w)
+        dCdA = self.loss_gradient(y_true, y_prob)
+        dAdZ = self.layers[-1].activation(self.layers[-1].z, derivative=True)
+        dZdW = X if len(self.layers) == 1 else self.layers[-2].a
+        dCdW = np.dot(dZdW.T, dCdA * dAdZ)
+        grad_w.append(dCdW)
 
         # Compute the gradient of the error w.r.t the biases of the output layer
-        del_c_wrt_b = np.sum(del_a_wrt_z * del_c_wrt_a, axis=0)
-        grad_b.append(del_c_wrt_b)
+        dCdB = np.sum(dAdZ * dCdA, axis=0)
+        grad_b.append(dCdB)
 
         # Loop over the layers starting from the second-to-last layer
         for layer_idx in range(len(self.layers) - 2, -1, -1):
+
             # Compute the gradient of the error w.r.t the output of the previous layer
-            del_z_wrt_a = self.layers[layer_idx + 1].w
-            del_c_wrt_a = np.dot(del_c_wrt_a * del_a_wrt_z, del_z_wrt_a.T)
+            dZdA = self.layers[layer_idx + 1].w
+            # Propagate the gradient backwards by multiplying with the gradient of the activation function
+            dCdA = np.dot(dCdA * dAdZ, dZdA.T)
 
             # Compute the gradient of the error w.r.t the weights of the previous layer
-            del_a_wrt_z = self.layers[layer_idx].activation(self.layers[layer_idx].z, derivative=True)
-            del_z_wrt_w = X if layer_idx == 0 else self.layers[layer_idx-1].a
-            del_c_wrt_w = np.dot(del_z_wrt_w.T, del_c_wrt_a * del_a_wrt_z)
-            grad_w.insert(0, del_c_wrt_w)
+            dAdZ = self.layers[layer_idx].activation(self.layers[layer_idx].z, derivative=True)
+            dZdW = X if layer_idx == 0 else self.layers[layer_idx-1].a
+            dCdW = np.dot(dZdW.T, dCdA * dAdZ)
+            grad_w.insert(0, dCdW)
 
             # Compute the gradient of the error w.r.t the biases of the previous layer
-            del_c_wrt_b = np.sum(del_a_wrt_z * del_c_wrt_a, axis=0)
-            grad_b.insert(0, del_c_wrt_b)
+            dCdB = np.sum(dAdZ * dCdA, axis=0)
+            grad_b.insert(0, dCdB)
 
-        # Update the weights and biases of the output layer
-        self.update_weights(grad_w, grad_b)
+        return grad_w, grad_b
 
     def fit(self, X, y, epochs=1, batch_size=32, lr=0.01, verbose=True, random_state=None, patience=None):
         self.lr = lr
@@ -301,6 +356,9 @@ class Sequential:
         # Initialize early stopping variables
         best_val_loss = float('inf')
         epochs_without_improvement = 0
+
+        # Initialize adam counter
+        self.t = 0
 
         for epoch in range(epochs):
             epoch_loss = 0
