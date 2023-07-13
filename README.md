@@ -5,4 +5,4 @@ This repository features a TensorFlow-style, Artificial Neural Network made from
 - Fully connected layer
 
 For demonstration, I provided `ANN.ipynb` that shows the usage of the model on the Breast Cancer Dataset.
-You can also test around with any numerical tabular data in the provided notebook located in the `test` folder.
+You can also test around with any numerical tabular data in the provided `ANN_Sandbox.ipynb` notebook.
