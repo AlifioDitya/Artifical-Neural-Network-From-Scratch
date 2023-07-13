@@ -218,7 +218,7 @@ class Sequential:
         self.v_w = [np.zeros(layer.w.shape) for layer in self.layers]
         self.v_b = [np.zeros(layer.b.shape) for layer in self.layers]
 
-        # Compute gradient of loss with respect to weights and biases, using 
+        # Compute gradient of loss with respect to weights and biases
         grad_w, grad_b = self.gradient_descent(X, y_true, y_prob)
 
         # Update the iteration counter
